@@ -2,8 +2,8 @@
 1. Docker ビルド
 
 bash   
-git clone git@github.com:tomato-rabbit1833/mogitate.git
-cd mogitate
+git clone git@github.com:tomato-rabbit1833/free-market.git
+cd free-market
 docker-compose up -d --build
 
 ※ Mac M1/M2 の場合に no matching manifest for linux/arm64/v8 エラーが出たら、
