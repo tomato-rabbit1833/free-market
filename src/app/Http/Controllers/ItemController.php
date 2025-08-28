@@ -11,6 +11,9 @@ use App\Models\Comment;
 
 class ItemController extends Controller
 {
+    /**
+     * ダミーデータ
+     */
     private function dummyItems()
     {
         return [
@@ -96,93 +99,121 @@ class ItemController extends Controller
             ],
         ];
     }
-      public function index(Request $request)
-    {
-        $query = Item::with('images'); // ← 画像も一緒に取得できるよう変更
 
-        // 検索条件
-        if ($keyword = $request->input('keyword')) {
-            $query->where('name', 'like', "%{$keyword}%");
-        }
-
-        if ($categoryId = $request->input('category_id')) {
-            $query->where('category_id', $categoryId);
-        }
-
-        if ($minPrice = $request->input('min_price')) {
-            $query->where('price', '>=', $minPrice);
-        }
-
-        if ($maxPrice = $request->input('max_price')) {
-            $query->where('price', '<=', $maxPrice);
-        }
-
-        // 並び替え条件
-        $sort = $request->input('sort');
-        switch ($sort) {
-            case 'price_asc':
-                $query->orderBy('price', 'asc');
-                break;
-            case 'price_desc':
-                $query->orderBy('price', 'desc');
-                break;
-            case 'newest':
-                $query->orderBy('created_at', 'desc');
-                break;
-            case 'oldest':
-                $query->orderBy('created_at', 'asc');
-                break;
-            default:
-                $query->orderBy('created_at', 'desc');
-        }
-
-    // ページネーション（クエリパラメータ保持）
-    $items = collect($this->dummyItems()); // ← DBじゃなくダミーデータを使う
-    $categories = Category::all();
-
-    return view('items.index', compact('items', 'categories'));
-}
-
-
-
-public function show($id)
-
-    
+    /**
+     * 商品一覧
+     */
+    public function index(Request $request)
 {
-       $item = Item::with('comments.user')->findOrFail($id);
+    // DBから商品取得
+    $query = Item::query();
 
-    return view('items.show', compact('item'));
-}
-
-
-         
-     public function create()
-{
-    return view('items.create');
-}
-
-public function store(Request $request)
-{
-    $request->validate([
-        'name' => 'required|string|max:255',
-        'price' => 'required|integer|min:0',
-        'description' => 'nullable|string',
-        'image' => 'nullable|image|max:2048',
-    ]);
-
-    $path = null;
-    if ($request->hasFile('image')) {
-        $path = $request->file('image')->store('products', 'public');
+    // 検索条件
+    if ($keyword = $request->input('keyword')) {
+        $query->where('name', 'like', "%{$keyword}%");
+    }
+    if ($categoryId = $request->input('category_id')) {
+        $query->whereHas('categories', function($q) use ($categoryId) {
+            $q->where('categories.id', $categoryId);
+        });
+    }
+    if ($minPrice = $request->input('min_price')) {
+        $query->where('price', '>=', $minPrice);
+    }
+    if ($maxPrice = $request->input('max_price')) {
+        $query->where('price', '<=', $maxPrice);
     }
 
-    Item::create([
-        'user_id' => Auth::id(),
-        'name' => $request->name,
-        'price' => $request->price,
-        'description' => $request->description,
-        'image_path' => $path,
-    ]);
+    // 並び替え
+    $sort = $request->input('sort');
+    switch ($sort) {
+        case 'price_asc':
+            $query->orderBy('price', 'asc');
+            break;
+        case 'price_desc':
+            $query->orderBy('price', 'desc');
+            break;
+        case 'newest':
+            $query->orderBy('created_at', 'desc');
+            break;
+        case 'oldest':
+            $query->orderBy('created_at', 'asc');
+            break;
+        default:
+            $query->orderBy('created_at', 'desc');
+    }
 
-         return redirect()->route('items.create')->with('success', '商品を出品しました！');
+    // DBの商品だけページネーション
+    $dbItems = $query->paginate(6);
+
+    // ダミーデータ（固定）
+    $dummyItems = collect($this->dummyItems());
+
+    // 表示用に結合（ダミー + DBのページネーション）
+    // → ページネーションは DB のみ有効
+    $items = $dummyItems->concat($dbItems->items());
+
+    $categories = Category::all();
+
+    return view('items.index', [
+        'items' => $items,
+        'categories' => $categories,
+        'dbItems' => $dbItems, // ページネーション用に渡す
+    ]);
+}
+
+
+    /**
+     * 商品詳細
+     */
+    public function show($id)
+    {
+        $item = Item::with('comments.user')->findOrFail($id);
+        return view('items.show', compact('item'));
+    }
+
+    /**
+     * 出品画面
+     */
+    public function create()
+    {
+        $categories = Category::all();
+        return view('items.create', compact('categories'));
+    }
+
+    /**
+     * 出品処理
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'price' => 'required|integer|min:0',
+            'description' => 'nullable|string',
+            'condition' => 'required|string',
+            'categories' => 'array',
+            'categories.*' => 'exists:categories,id',
+            'image' => 'nullable|image|max:2048',
+        ]);
+
+        $path = null;
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('items', 'public');
+        }
+
+        $item = Item::create([
+            'user_id' => Auth::id(),
+            'name' => $request->name,
+            'price' => $request->price,
+            'description' => $request->description,
+            'condition' => $request->condition,
+            'image_path' => $path,
+        ]);
+
+        if ($request->filled('categories')) {
+            $item->categories()->sync($request->categories);
+        }
+
+        return redirect()->route('items.index')->with('success', '商品を出品しました！');
     }
 }

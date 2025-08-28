@@ -2,53 +2,44 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Item;
-use App\Models\Wishlist;
 use Illuminate\Support\Facades\Auth;
-
-
 
 class WishlistController extends Controller
 {
-    // 登録
+    /**
+     * マイリスト一覧を表示
+     */
+    public function index()
+    {
+        $user = Auth::user();
+
+        // ユーザーが「いいね」した商品だけ取得
+        $items = $user->wishlistedItems()
+            ->with('categories', 'purchase') // カテゴリ・購入情報も取得
+            ->paginate(6);
+
+        return view('wishlist.index', compact('items'));
+    }
+
+    /**
+     * 商品をマイリストに追加
+     */
     public function store($id)
     {
         $user = Auth::user();
+        $user->wishlistedItems()->attach($id);
 
-        // すでに登録されていないか確認
-        $exists = Wishlist::where('user_id', $user->id)
-                          ->where('item_id', $id)
-                          ->exists();
-
-        if (!$exists) {
-            Wishlist::create([
-                'user_id' => $user->id,
-                'item_id' => $id,
-            ]);
-        }
-
-        return redirect()->back()->with('success', 'マイリストに追加しました。');
+        return back()->with('success', 'マイリストに追加しました！');
     }
 
-    // 削除
+    /**
+     * 商品をマイリストから削除
+     */
     public function destroy($id)
     {
         $user = Auth::user();
+        $user->wishlistedItems()->detach($id);
 
-        Wishlist::where('user_id', $user->id)
-                ->where('item_id', $id)
-                ->delete();
-
-        return redirect()->back()->with('success', 'マイリストから削除しました。');
+        return back()->with('success', 'マイリストから削除しました。');
     }
-
-    public function index()
-{
-    $user = Auth::user();
-    $wishlistedItems = $user->wishlistedItems; // リレーションを利用
-
-    return view('wishlist.index', compact('wishlistedItems'));
 }
-}
-
